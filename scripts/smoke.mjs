@@ -57,7 +57,13 @@ async function main() {
 
     // ---------------------------------------------------------- 首屏
     await cdp.send('Page.navigate', { url: URL_BASE });
-    await cdp.waitFor(`document.documentElement.dataset.appReady === '1'`, { label: '应用启动完成' });
+    try {
+      await cdp.waitFor(`document.documentElement.dataset.appReady === '1'`, { label: '应用启动完成' });
+    } catch {
+      // 线上跑的时候最常见的原因是刚部署完、CDN 边缘还在缓存旧的 404
+      const actual = await cdp.eval(`return { url: location.href, title: document.title, state: document.readyState };`);
+      throw new Error(`页面没有启动成功，实际拿到的是：${JSON.stringify(actual)}（线上地址请确认部署已完成、CDN 缓存已过期）`);
+    }
     // 保证从干净状态开始（清掉本地存储再重新加载）
     await cdp.eval(`localStorage.clear(); return true;`);
     await cdp.send('Page.reload');

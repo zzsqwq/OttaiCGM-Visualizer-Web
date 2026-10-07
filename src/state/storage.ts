@@ -2,6 +2,7 @@
  * 本地持久化（localStorage）
  * 数据只存在浏览器里，刷新/关闭页面后自动恢复，不上传任何服务器。
  */
+import { SAMPLE_FILE_NAMES } from '../core/types';
 import type { Annotation, Reading, SourceInfo } from '../core/types';
 import { DEFAULT_SETTINGS, type Settings } from './store';
 
@@ -92,10 +93,15 @@ export function loadWorkspace(): LoadedWorkspace | null {
     }
     readings.sort((a, b) => (a.day === b.day ? a.min - b.min : a.day < b.day ? -1 : 1));
     const annotations = Array.isArray(data.annotations) ? data.annotations : [];
+    // 迁移：旧版本没有示例标记，按文件名把示例来源认出来，
+    // 这样老数据也能用「移除示例」一键清掉
+    const sources = (Array.isArray(data.sources) ? data.sources : []).map((source) =>
+      !source.sample && SAMPLE_FILE_NAMES.includes(source.name) ? { ...source, sample: true } : source,
+    );
     return {
       readings,
       annotations,
-      sources: Array.isArray(data.sources) ? data.sources : [],
+      sources,
       savedAt: data.savedAt ?? 0,
       currentDay: typeof data.currentDay === 'string' ? data.currentDay : null,
       annotationsOnly: readings.length === 0 && annotations.length > 0,

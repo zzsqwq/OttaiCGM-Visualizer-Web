@@ -163,6 +163,34 @@ describe('本地存储：超出配额时的降级', () => {
     expect(storage.loadWorkspace()!.readings).toHaveLength(3);
   });
 
+  it('旧版本存的数据：按文件名把示例来源认出来（迁移）', async () => {
+    const storage = await loadStorage();
+    // 模拟旧版本存的来源（没有 sample 标记）
+    const legacy = {
+      v: 1,
+      savedAt: Date.now(),
+      readings: { '2025-03-16': [0, 5.6] },
+      annotations: [],
+      sources: [
+        { name: 'OttaiCGM-示例数据.xlsx', readings: 1, skipped: 0, duplicates: 0, unit: 'mmol/L', kind: 'glucose' },
+        { name: '我的数据.xlsx', readings: 1, skipped: 0, duplicates: 0, unit: 'mmol/L', kind: 'glucose' },
+      ],
+    };
+    mem.setItem('ottai-cgm:workspace:v1', JSON.stringify(legacy));
+    const loaded = storage.loadWorkspace();
+    expect(loaded!.sources.map((s) => [s.name, Boolean(s.sample)])).toEqual([
+      ['OttaiCGM-示例数据.xlsx', true],
+      ['我的数据.xlsx', false],
+    ]);
+  });
+
+  it('新版本自己存的示例标记不会被覆盖', async () => {
+    const storage = await loadStorage();
+    storage.saveWorkspace([], [], [{ name: '别的名字.xlsx', readings: 0, skipped: 0, duplicates: 0, unit: 'mmol/L', kind: 'glucose', sample: true }], null);
+    const loaded = storage.loadWorkspace();
+    expect(loaded!.sources[0].sample).toBe(true);
+  });
+
   it('坏掉的 JSON 不会让应用崩溃', async () => {
     const storage = await loadStorage();
     mem.setItem('ottai-cgm:workspace:v1', '{ 这不是 json');

@@ -25,6 +25,8 @@ export interface Annotation {
   offset: number;
   /** 来自示例标注文件（移除示例数据时会一起删掉；用户自己写的不受影响） */
   sample?: boolean;
+  /** 从哪个文件导入的（手动在图上写的没有这个字段）；移除该来源时按它精确删除 */
+  source?: string;
 }
 
 /** 自动检出的血糖峰值 */
@@ -66,3 +68,11 @@ export interface TargetRange {
 }
 
 export const DEFAULT_TARGET: TargetRange = { low: 3.9, high: 7.8 };
+
+/**
+ * 「试试示例」用的文件名。
+ *
+ * 除了导入时打标记，旧版本存下来的数据没有示例标记，
+ * 只能靠文件名把它们认出来（见 storage.loadWorkspace 的迁移）。
+ */
+export const SAMPLE_FILE_NAMES = ['OttaiCGM-示例数据.xlsx', '活动标注-示例.csv'];

@@ -55,6 +55,14 @@ async function main() {
     await cdp.send('Runtime.enable');
     await cdp.send('DOM.enable');
 
+    // 页面里的 window.confirm 会阻塞渲染进程（headless 下没人点），统一自动确认
+    cdp.ws.on('message', (text) => {
+      const msg = JSON.parse(text);
+      if (msg.method === 'Page.javascriptDialogOpening') {
+        cdp.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => undefined);
+      }
+    });
+
     // ---------------------------------------------------------- 首屏
     await cdp.send('Page.navigate', { url: URL_BASE });
     try {
@@ -435,6 +443,112 @@ async function main() {
       } catch (e) { return 'ERR:' + e.message; }
     `);
     check('能把图表+标注合成 PNG', typeof png === 'number' && png > 20000, `大小 ${png} 字节`);
+
+    // ---------------------------------------------------------- 旧数据迁移与来源管理
+    console.log('\n[11] 旧版本数据迁移 + 移除单个来源');
+
+    // 先清空（同时清掉本地存储），否则注入的旧数据会在刷新时被自动保存覆盖
+    await cdp.eval(`
+      window.confirm = () => true;
+      document.querySelector('#btn-export').click();
+      return true;
+    `);
+    await sleep(200);
+    await cdp.eval(`document.querySelector('#export-menu [data-act="clear"]').click(); return true;`);
+    await cdp.waitFor(`!document.querySelector('#empty-state').hidden`, { label: '清空后回到引导页' });
+
+    await cdp.eval(`
+      // 模拟旧版本存下来的数据：示例来源没有标记、还有一条日期已经不存在了的标注
+      const legacy = {
+        v: 1,
+        savedAt: Date.now(),
+        readings: { '2025-03-16': [0, 5.6, 5, 5.7], '2025-03-17': [0, 6.2], '2026-10-07': [0, 6.1, 5, 6.3] },
+        annotations: [{ day: '2024-01-01', min: 600, text: '日期已经没有数据的旧标注', offset: 1 }],
+        sources: [
+          { name: 'OttaiCGM-示例数据.xlsx', readings: 3, skipped: 0, duplicates: 0, unit: 'mmol/L', kind: 'glucose' },
+          { name: 'OttaiCGM_E40A758F7AC3.xlsx', readings: 2, skipped: 0, duplicates: 0, unit: 'mmol/L', kind: 'glucose', days: ['2026-10-07'] },
+        ],
+      };
+      localStorage.setItem('ottai-cgm:workspace:v1', JSON.stringify(legacy));
+      return true;
+    `);
+    await cdp.send('Page.reload');
+    await cdp.waitFor(`document.documentElement.dataset.appReady === '1'`, { label: '迁移后启动' });
+    await sleep(900);
+    const migrated = await cdp.eval(`
+      return {
+        removeBtnVisible: !document.querySelector('#btn-sample-remove').hidden,
+        days: document.querySelectorAll('#day-list .day-item').length,
+        orphanHint: document.querySelector('#sources .source-hint')?.textContent.trim() ?? null,
+      };
+    `);
+    check('旧数据能按文件名识别出示例来源', migrated.removeBtnVisible && migrated.days === 3, JSON.stringify(migrated));
+    check('孤立标注有提示', Boolean(migrated.orphanHint && migrated.orphanHint.includes('已移除的日期')), String(migrated.orphanHint));
+
+    // 一键清理孤立标注
+    await cdp.eval(`document.querySelector('#sources .source-hint button').click(); return true;`);
+    await sleep(600);
+    const afterOrphanClean = await cdp.eval(`
+      return {
+        hint: document.querySelector('#sources .source-hint')?.textContent.trim() ?? null,
+        annotations: window.__ottai.app.debugAnnotations().length,
+      };
+    `);
+    check('可以一键清理孤立标注', afterOrphanClean.hint === null && afterOrphanClean.annotations === 0, JSON.stringify(afterOrphanClean));
+
+    // 移除示例
+    await cdp.eval(`document.querySelector('#btn-sample-remove').click(); return true;`);
+    await sleep(700);
+    const afterMigratedRemove = await cdp.eval(`
+      return {
+        days: [...document.querySelectorAll('#day-list .day-item')].map(e => e.dataset.day),
+        sources: [...document.querySelectorAll('#sources .source-item')].map(e => e.textContent.trim()),
+      };
+    `);
+    check(
+      '迁移后一键移除示例，只留自己的数据',
+      afterMigratedRemove.days.length === 1 && afterMigratedRemove.days[0] === '2026-10-07' && afterMigratedRemove.sources.length === 1,
+      `${afterMigratedRemove.days.join(',')} / ${afterMigratedRemove.sources.join(' · ')}`,
+    );
+
+    // ---- 移除单个来源 ----
+    await cdp.setFileInput('#file-input', [FIXTURES.big]);
+    await cdp.waitFor(`document.querySelectorAll('#day-list .day-item').length === 16`, { label: '追加导入后 16 天' });
+    await sleep(600);
+    const beforeRemove = await cdp.eval(`
+      return {
+        sources: document.querySelectorAll('#sources .source-item').length,
+        rows: [...document.querySelectorAll('#sources .source-item')].map(e => e.querySelector('.source-name').textContent),
+      };
+    `);
+    check('两个来源都列出来了', beforeRemove.sources === 2, beforeRemove.rows.join(' · '));
+
+    // 点第二个来源的删除按钮（OttaiCGM_20250330.xlsx）
+    await cdp.eval(`
+      const rows = [...document.querySelectorAll('#sources .source-item')];
+      const row = rows.find(r => r.querySelector('.source-name').textContent.includes('20250330'));
+      row.querySelector('.source-del').click();
+      return true;
+    `);
+    await cdp.waitFor(`document.querySelectorAll('#day-list .day-item').length === 1`, { label: '移除来源后只剩 1 天' });
+    await sleep(500);
+    const afterSourceRemove = await cdp.eval(`
+      return {
+        days: [...document.querySelectorAll('#day-list .day-item')].map(e => e.dataset.day),
+        sources: [...document.querySelectorAll('#sources .source-item')].map(e => e.querySelector('.source-name').textContent),
+        toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent),
+      };
+    `);
+    check(
+      '可以移除单个来源，只删它带来的日期',
+      afterSourceRemove.days.length === 1 && afterSourceRemove.days[0] === '2026-10-07' && afterSourceRemove.sources.length === 1,
+      `${afterSourceRemove.days.join(',')} / ${afterSourceRemove.sources.join(' · ')}`,
+    );
+    check(
+      '移除来源有明确提示',
+      afterSourceRemove.toasts.some((t) => t.includes('已移除')),
+      afterSourceRemove.toasts.slice(-1).join(''),
+    );
 
     check('运行期间没有控制台报错', cdp.consoleErrors.length === 0, cdp.consoleErrors.slice(0, 3).join(' | '));
   } finally {

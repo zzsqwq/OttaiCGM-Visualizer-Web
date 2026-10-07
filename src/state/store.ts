@@ -230,8 +230,13 @@ class Store {
     return created.length;
   }
 
-  /** 把「没有日期」的标注落到指定日期；sample = 来自示例数据 */
-  addDrafts(drafts: ParsedAnnotationDraft[], fallbackDay: string, sample = false): number {
+  /** 把「没有日期」的标注落到指定日期；sample/source 记录它们的来路，方便以后精确移除 */
+  addDrafts(
+    drafts: ParsedAnnotationDraft[],
+    fallbackDay: string,
+    options: { sample?: boolean; source?: string } = {},
+  ): number {
+    const { sample = false, source } = options;
     return this.addAnnotations(
       drafts.map((d) => ({
         day: d.day ?? fallbackDay,
@@ -239,8 +244,102 @@ class Store {
         text: d.text,
         offset: d.offset,
         sample: d.sample ?? sample,
+        ...(d.source ?? source ? { source: d.source ?? source } : {}),
       })),
     );
+  }
+
+  // ---------------------------------------------------------------- 数据源
+
+  /** 某个来源独有的日期（其它来源没覆盖的） */
+  private exclusiveDays(sourceName: string): string[] {
+    const sources = this.state.dataset?.sources ?? [];
+    const source = sources.find((s) => s.name === sourceName);
+    if (!source) return [];
+    const otherDays = new Set(sources.filter((s) => s !== source).flatMap((s) => s.days ?? []));
+    // 旧数据没有 days 记录，退化成「其它来源都没覆盖的日期」
+    const days = source.days?.length ? source.days : (this.state.dataset?.days ?? []);
+    return days.filter((d) => !otherDays.has(d));
+  }
+
+  /**
+   * 移除某个来源之前先算一遍影响，供确认弹窗展示：
+   * - days：移除后会消失的日期（其它来源也覆盖的日期不受影响）
+   * - annotations：这些日期上的标注条数（会跟着一起删）
+   */
+  sourceRemovalPlan(
+    name: string,
+  ): { name: string; days: string[]; readings: number; annotations: number; importedAnnotations: number } | null {
+    const importedAnnotations = this.state.annotations.filter((a) => a.source === name).length;
+    const source = this.state.dataset?.sources.find((s) => s.name === name);
+    // 来源列表里没有、但有标注记着它（例如旧数据）：照样允许移除
+    if (!source && !importedAnnotations) return null;
+    if (!source) {
+      return { name, days: [], readings: 0, annotations: importedAnnotations, importedAnnotations };
+    }
+    const days = this.exclusiveDays(name);
+    const daySet = new Set(days);
+    const readings = (this.state.dataset?.readings ?? []).filter((r) => daySet.has(r.day)).length;
+    // 会删掉的标注 = 这个文件带来的（按 source 精确匹配）∪ 会消失日期上的
+    const affected = this.state.annotations.filter((a) => a.source === name || daySet.has(a.day));
+    return { name, days, readings, annotations: affected.length, importedAnnotations: this.state.annotations.filter((a) => a.source === name).length };
+  }
+
+  /**
+   * 移除一个来源。
+   *
+   * 标注处理规则：**移除后会消失的日期上的标注一起删掉**（否则会变成看不见又删不掉的孤立数据），
+   * 其它来源也覆盖的日期不受影响，标注也会保留 —— 所以「用新导出的文件替换旧文件」不会丢标注。
+   */
+  removeSource(name: string): { readings: number; annotations: number; days: string[] } {
+    const plan = this.sourceRemovalPlan(name);
+    if (!plan) return { readings: 0, annotations: 0, days: [] };
+    const daySet = new Set(plan.days);
+
+    const before = this.state.dataset?.readings ?? [];
+    const readings = before.filter((r) => !daySet.has(r.day));
+    const annotations = this.state.annotations.filter((a) => a.source !== name && !daySet.has(a.day));
+    if (annotations.length !== this.state.annotations.length) this.pushHistory();
+
+    const days = [...new Set(readings.map((r) => r.day))].sort();
+    const sources = (this.state.dataset?.sources ?? []).filter((s) => s.name !== name);
+    const currentDay = this.state.currentDay && days.includes(this.state.currentDay) ? this.state.currentDay : (days[0] ?? null);
+    const dataset = this.state.dataset
+      ? { ...this.state.dataset, readings, days, sources, loadedAt: Date.now() }
+      : null;
+
+    this.state = {
+      ...this.state,
+      dataset,
+      dayIndex: buildDayIndex(readings),
+      annotations,
+      currentDay,
+      selectedId: annotations.some((a) => a.id === this.state.selectedId) ? this.state.selectedId : null,
+      addMode: false,
+    };
+    this.emit();
+    return { readings: before.length - readings.length, annotations: plan.annotations, days: plan.days };
+  }
+
+  /** 存在于「已经没有数据的日期」上的标注（多半是数据被移除后留下的） */
+  orphanAnnotations(): Annotation[] {
+    const days = new Set(this.state.dataset?.days ?? []);
+    return this.state.annotations.filter((a) => !days.has(a.day));
+  }
+
+  /** 清理这些孤立标注 */
+  removeOrphanAnnotations(): number {
+    const orphans = this.orphanAnnotations();
+    if (!orphans.length) return 0;
+    this.pushHistory();
+    const ids = new Set(orphans.map((a) => a.id));
+    this.state = {
+      ...this.state,
+      annotations: this.state.annotations.filter((a) => !ids.has(a.id)),
+      selectedId: null,
+    };
+    this.emit();
+    return orphans.length;
   }
 
   // ---------------------------------------------------------------- 示例数据
@@ -270,7 +369,9 @@ class Store {
     const userDays = new Set(sources.filter((s) => !s.sample).flatMap((s) => s.days ?? []));
     const removeDays = new Set<string>();
     for (const source of sampleSources) {
-      for (const day of source.days ?? []) {
+      // 旧数据里示例来源没有记录覆盖日期，就退化成「用户没覆盖到的日期」
+      const days = source.days?.length ? source.days : (this.state.dataset?.days ?? []);
+      for (const day of days) {
         if (!userDays.has(day)) removeDays.add(day);
       }
     }

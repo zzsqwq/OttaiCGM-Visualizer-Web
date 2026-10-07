@@ -18,6 +18,8 @@ export interface ParsedAnnotationDraft {
   offset: number;
   /** 来自示例数据（备份文件里会带上） */
   sample?: boolean;
+  /** 来自哪个文件 */
+  source?: string;
 }
 
 export interface ParseOutcome {
@@ -371,7 +373,16 @@ function parseWorkspace(json: WorkspaceLike, fileName: string): ParseOutcome | n
       const min = typeof o.min === 'number' ? o.min : null;
       const text = typeof o.text === 'string' ? o.text : '';
       const offset = typeof o.offset === 'number' ? o.offset : 0;
-      if (min != null && text) annotations.push({ day, min, text, offset, ...(o.sample ? { sample: true } : {}) });
+      if (min != null && text) {
+        annotations.push({
+          day,
+          min,
+          text,
+          offset,
+          ...(o.sample ? { sample: true } : {}),
+          ...(typeof o.source === 'string' ? { source: o.source } : {}),
+        });
+      }
     }
   }
 

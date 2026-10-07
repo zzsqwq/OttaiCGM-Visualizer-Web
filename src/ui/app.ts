@@ -2,6 +2,7 @@
  * 应用装配层：把 store / 图表 / 叠加层 / 各种面板连起来
  */
 import { store, type Settings } from '../state/store';
+import { SAMPLE_FILE_NAMES } from '../core/types';
 import type { Annotation, Peak, Reading, SourceInfo } from '../core/types';
 import { parseFile, type ParseOutcome, type ParsedAnnotationDraft } from '../core/parser';
 import { findDailyPeaks } from '../core/peaks';
@@ -22,7 +23,7 @@ import {
 } from '../io/exporters';
 import { clear, h, qs } from './dom';
 
-const SAMPLE_FILES = ['sample/OttaiCGM-示例数据.xlsx', 'sample/活动标注-示例.csv'];
+const SAMPLE_FILES = SAMPLE_FILE_NAMES.map((name) => `sample/${name}`);
 
 export class App {
   private chart: DayChart | null = null;
@@ -303,7 +304,8 @@ export class App {
         dayNames.push(...outcome.readings.map((r) => r.day));
       }
       if (outcome.annotations.length) {
-        drafts.push(...outcome.annotations);
+        // 逐个标上是哪个文件带来的，移除该来源时才能精确删掉
+        for (const draft of outcome.annotations) drafts.push({ ...draft, source: draft.source ?? file.name });
         const src = { ...outcome.source, kind: 'annotations' as const, sample: isSample || undefined };
         if (!outcome.readings.length) sources.push(src);
       }
@@ -337,7 +339,7 @@ export class App {
       const day = store.get().currentDay ?? store.days()[store.days().length - 1] ?? null;
       const withDay = drafts.filter((d) => d.day).length;
       if (day) {
-        const n = store.addDrafts(drafts, day, isSample);
+        const n = store.addDrafts(drafts, day, { sample: isSample });
         store.toast(`已导入 ${n} 条活动标注${withDay < n ? `（其中 ${n - withDay} 条没有日期，归到 ${day}）` : ''}`, 'success', 4000);
       } else {
         warnings.push('标注文件里没有日期信息，也没有血糖数据可以对应，暂时无法导入');
@@ -678,9 +680,9 @@ export class App {
       this.renderKeys.annotations = annotationsKey;
     }
 
-    if (`${dataVersion}` !== this.renderKeys.sources) {
+    const sourcesKey = `${dataVersion}|${state.annotations.length}`;
+    if (sourcesKey !== this.renderKeys.sources) {
       this.renderSources();
-      this.renderKeys.sources = `${dataVersion}`;
     }
 
     this.renderToolbarState();
@@ -1036,18 +1038,75 @@ export class App {
     this.$['btnSampleRemove'].hidden = !store.hasSampleData();
     clear(this.$['sources']);
     const sources = state.dataset?.sources ?? [];
+
+    const sourcesKey = `${state.dataset?.loadedAt ?? 0}|${state.annotations.length}`;
+    this.renderKeys.sources = sourcesKey;
+
     if (!sources.length) {
       this.$['sources'].appendChild(h('li', { class: 'muted small', text: '（本次会话未记录来源文件）' }));
-      return;
+    } else {
+      for (const s of sources) {
+        const del = h('button', {
+          class: 'source-del',
+          type: 'button',
+          text: '×',
+          title: `移除「${s.name}」`,
+          on: { click: () => this.removeSource(s) },
+        });
+        this.$['sources'].appendChild(
+          h('li', { class: 'source-item' }, [
+            h('span', { class: 'source-name', text: s.name, title: s.name }),
+            h('span', { class: 'source-meta muted', text: s.kind === 'annotations' ? `${s.readings} 条标注` : `${s.readings} 点` }),
+            del,
+          ]),
+        );
+      }
     }
-    for (const s of sources) {
+
+    // 数据被移除后，某些日期上的标注会「无家可归」：给个提示和一键清理
+    const orphans = store.orphanAnnotations();
+    if (orphans.length) {
+      const days = new Set(orphans.map((a) => a.day)).size;
       this.$['sources'].appendChild(
-        h('li', { class: 'source-item' }, [
-          h('span', { class: 'source-name', text: s.name, title: s.name }),
-          h('span', { class: 'source-meta muted', text: s.kind === 'annotations' ? `${s.readings} 条标注` : `${s.readings} 点` }),
+        h('li', { class: 'source-hint' }, [
+          h('span', { text: `${orphans.length} 条标注在已移除的日期上（${days} 天）` }),
+          h('button', {
+            class: 'link-btn danger',
+            type: 'button',
+            text: '清理',
+            title: '删掉这些日期已经不存在的数据上的标注',
+            on: {
+              click: () => {
+                if (!window.confirm(`删除 ${orphans.length} 条孤立标注？这些日期已经没有数据了。`)) return;
+                const removed = store.removeOrphanAnnotations();
+                store.toast(`已清理 ${removed} 条孤立标注`, 'success');
+              },
+            },
+          }),
         ]),
       );
     }
+  }
+
+  /** 移除一个来源：先算影响并让用户确认，标注规则见 store.removeSource */
+  private removeSource(source: SourceInfo): void {
+    const plan = store.sourceRemovalPlan(source.name);
+    if (!plan) return;
+    const lines = [`移除「${source.name}」？`, ''];
+    if (plan.days.length) {
+      lines.push(`会删掉 ${plan.days.length} 天的数据（${plan.readings} 个血糖点）。`);
+      if (plan.annotations) lines.push(`这些日期上还有 ${plan.annotations} 条标注，会一起删掉。`);
+    } else {
+      lines.push('这个来源覆盖的日期别的文件里也有，只会把它从来源列表里移除。');
+    }
+    lines.push('', '其它来源和别天的数据不受影响。');
+    if (!window.confirm(lines.join('\n'))) return;
+
+    const removed = store.removeSource(source.name);
+    store.toast(
+      `已移除「${source.name}」：${removed.readings} 个血糖点${removed.annotations ? ` / ${removed.annotations} 条标注` : ''}`,
+      'success',
+    );
   }
 
   private renderToolbarState(): void {

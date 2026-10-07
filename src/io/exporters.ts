@@ -25,7 +25,7 @@ export interface WorkspaceExport {
   version: 1;
   exportedAt: string;
   readings: Record<string, number[]>;
-  annotations: { day: string; min: number; text: string; offset: number; sample?: boolean }[];
+  annotations: { day: string; min: number; text: string; offset: number; sample?: boolean; source?: string }[];
   sources?: Dataset['sources'];
   settings?: Record<string, unknown>;
 }
@@ -54,6 +54,7 @@ export function workspaceToJson(
       text: a.text,
       offset: a.offset,
       ...(a.sample ? { sample: true } : {}),
+      ...(a.source ? { source: a.source } : {}),
     })),
     settings,
   };

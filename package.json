@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "欧态血糖仪数据可视化 — 纯前端版本",
+  "description": "血糖可视化 — 纯前端工具，目前支持欧态 App 导出格式",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

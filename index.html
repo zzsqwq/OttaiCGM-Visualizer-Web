@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>欧态血糖可视化 · 在浏览器里看懂你的血糖曲线</title>
+    <title>血糖可视化 · 按天看曲线，随手记标注</title>
     <meta
       name="description"
-      content="纯前端的欧态血糖仪数据可视化工具：导入 Excel/CSV，自动按天拆分，在曲线上自由添加饮食、运动、感受标注。数据只在本地浏览器解析，不会上传。"
+      content="血糖可视化：按天查看曲线，记录饮食、运动和感受，导出带标注的图片。数据在浏览器本地处理。目前支持欧态 App 导出格式。"
     />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234a86e8'/%3E%3Cpath d='M5 20 L11 20 L14 12 L18 24 L21 17 L27 17' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
@@ -29,14 +29,14 @@
             </svg>
           </span>
           <div class="brand-text">
-            <h1>欧态血糖可视化</h1>
-            <p>导入欧态血糖仪数据，按天看曲线、自由加标注 · 全程本地解析，不上传</p>
+            <h1>血糖可视化</h1>
+            <p>按天看曲线，记录饮食与运动 · 数据在浏览器本地处理</p>
           </div>
         </div>
 
         <div class="topbar-actions">
           <button id="btn-sample" class="btn ghost" type="button">试试示例</button>
-          <button id="btn-import" class="btn primary" type="button">
+          <button id="btn-import" class="btn primary" type="button" title="目前支持欧态 App 导出格式、血糖与标注 CSV、本工具的 JSON 备份">
             <span class="ico">↑</span> 导入数据
           </button>
           <div class="popover-host">
@@ -71,9 +71,9 @@
         <section id="empty-state" class="empty-state">
           <div class="empty-card">
             <div class="empty-icon" aria-hidden="true">↑</div>
-            <h2>把欧态血糖仪的导出文件拖进来</h2>
+            <h2>导入数据，看看这一天的曲线</h2>
             <p class="muted">
-              支持欧态 App 导出的 <code>.xlsx</code>、以及 <code>.csv</code> / <code>.json</code>；也可以同时导入旧脚本用的标注 CSV。
+              目前支持欧态 App 导出的 <code>.xlsx</code>，也可导入血糖与标注 <code>.csv</code>、本工具的 <code>.json</code> 备份。
             </p>
             <p id="pending-ann" class="pending-ann" hidden></p>
             <div class="empty-actions">

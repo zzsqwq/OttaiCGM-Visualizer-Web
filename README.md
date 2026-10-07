@@ -1,12 +1,13 @@
-# 欧态血糖可视化 · 网页版
+# 血糖可视化 · 网页版
 
-把欧态血糖仪导出的数据直接拖进浏览器，就能按天查看血糖曲线、随手加标注。
+把导出的血糖数据拖进浏览器，就能按天查看曲线、随手加标注。
+目前支持欧态 App 导出格式，后续计划逐步适配更多厂商。仓库名保持不变。
 **纯前端、无后端、无上传**：所有解析、绘图、保存都在你自己的浏览器里完成。
 
 > 在线使用：<https://zzsqwq.github.io/OttaiCGM-Visualizer-Web/>
 > 原来的 Python 脚本版在 <https://github.com/zzsqwq/OttaiGCM-Visualizer>
 
-![界面预览](docs/preview-light.png)
+![界面预览（模拟数据）](docs/preview-light.png)
 
 <sub>深色主题与移动端效果见 [docs/](docs/)</sub>
 
@@ -84,7 +85,8 @@ pnpm build:single     # 输出 web/dist-single/index.html（约 1 MB，JS/CSS �
 
 ## 支持的输入格式
 
-血糖数据（表头会自动识别，列名不用改）：
+当前已适配的厂商格式为欧态 App 导出文件；也可导入本工具导出的血糖 CSV 和 JSON 备份。
+其他厂商格式待适配。以下是当前解析器识别的表头、单位和时间写法：
 
 | 情况 | 说明 |
 | --- | --- |

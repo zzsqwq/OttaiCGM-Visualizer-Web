@@ -148,12 +148,6 @@ export async function composePng(opts: PngExportOptions): Promise<Blob> {
   ].join('   ·   ');
   ctx.fillText(summary, pad, 56 * scale);
 
-  ctx.fillStyle = palette.muted;
-  ctx.font = `${11 * scale}px ${FONT_FAMILY}`;
-  ctx.textAlign = 'right';
-  ctx.fillText(`欧态血糖仪 · 纯前端可视化（3.9-${stats.target.high} mmol/L 为目标范围）`, canvas.width - pad, 56 * scale);
-  ctx.textAlign = 'left';
-
   // ---- 图表
   ctx.drawImage(img, 0, headH);
 
@@ -214,7 +208,7 @@ export async function composePng(opts: PngExportOptions): Promise<Blob> {
   // ---- 页脚
   ctx.fillStyle = palette.muted;
   ctx.font = `${10.5 * scale}px ${FONT_FAMILY}`;
-  ctx.fillText('数据由欧态血糖仪导出，本页面在浏览器本地解析与绘制。', pad, canvas.height - 13 * scale);
+  ctx.fillText(`血糖可视化 · 目标范围 ${stats.target.low}–${stats.target.high} mmol/L · 浏览器本地绘制`, pad, canvas.height - 13 * scale);
 
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('导出失败'))), 'image/png');

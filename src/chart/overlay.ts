@@ -345,11 +345,13 @@ export class AnnotationOverlay {
     }
 
     const placements: Placement[] = [];
+    const { start, end } = this.chart.zoomWindow();
     for (const ann of this.annotations) {
       const entry = this.entries.get(ann.id);
       if (!entry) continue;
       const base = valueAt(this.readings, ann.min);
-      if (base == null) {
+      // 标签、锚点和引线共用当前可见时间范围，导出也复用这份布局。
+      if (base == null || ann.min < start || ann.min > end) {
         entry.label.style.display = 'none';
         entry.anchor.style.display = 'none';
         entry.path.style.display = 'none';

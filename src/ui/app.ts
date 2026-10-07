@@ -384,7 +384,7 @@ export class App {
       }
       case 'json': {
         const json = workspaceToJson(state.dataset, state.annotations, state.settings as unknown as Record<string, unknown>);
-        downloadText(`ottai-cgm-备份-${day ?? 'empty'}.json`, json, 'application/json');
+        downloadText(`血糖可视化-备份-${day ?? 'empty'}.json`, json, 'application/json');
         store.toast('已导出完整备份，可随时用「从 JSON 恢复」载入', 'success');
         return;
       }

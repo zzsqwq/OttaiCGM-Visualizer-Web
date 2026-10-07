@@ -298,7 +298,33 @@ async function main() {
     `);
     await sleep(800);
     await cdp.screenshot(join(SHOTS, '10-zoom.png'));
-    check('缩放交互无异常', true);
+    await cdp.eval(`
+      window.__ottai.app.chart.chart.dispatchAction({ type: 'dataZoom', startValue: 730, endValue: 990 });
+      return true;
+    `);
+    await sleep(500);
+    const zoomed = await cdp.eval(`
+      const app = window.__ottai.app;
+      const day = document.querySelector('.day-item.is-active').dataset.day;
+      const expected = app.debugAnnotations().filter(a => a.day === day && a.min >= 730 && a.min <= 990).map(a => a.id).sort();
+      const visible = selector => [...document.querySelectorAll(selector)].filter(e => getComputedStyle(e).display !== 'none');
+      return {
+        expected,
+        labels: visible('.ann-label').map(e => e.dataset.id).sort(),
+        anchors: visible('.ann-anchor').map(e => e.dataset.id).sort(),
+        paths: visible('.ann-path').length,
+        exported: app.overlay.snapshotLayout().map(a => a.id).sort(),
+        total: app.debugAnnotations().filter(a => a.day === day).length,
+      };
+    `);
+    const sameIds = ids => JSON.stringify(ids) === JSON.stringify(zoomed.expected);
+    check('缩放后只显示当前时段的标签、锚点和引线',
+      zoomed.expected.length > 0 && zoomed.total > zoomed.expected.length && sameIds(zoomed.labels) && sameIds(zoomed.anchors) && zoomed.paths === zoomed.expected.length);
+    check('缩放后的导出布局只包含可见标注', sameIds(zoomed.exported));
+    await cdp.eval(`document.querySelector('#btn-reset-zoom').click(); return true;`);
+    await sleep(500);
+    const resetLabels = await cdp.eval(`return [...document.querySelectorAll('.ann-label')].filter(e => getComputedStyle(e).display !== 'none').length;`);
+    check('重置缩放后恢复全天标注', resetLabels === zoomed.total, String(resetLabels));
 
     // 回到浅色
     await cdp.eval(`document.querySelector('#btn-theme').click(); return true;`);

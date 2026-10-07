@@ -120,9 +120,18 @@ pnpm reference        # 重新生成峰值检测的测试基准（需要本地�
 > `pnpm smoke` 需要本机装了 Chrome；不是默认安装路径时用 `CHROME_PATH=/path/to/chrome pnpm smoke` 指定。
 
 `pnpm smoke` 会自己拉起 headless Chrome，跑一遍「示例数据 → 导入真实 xlsx → 追加导入 →
-导入标注 CSV → 手动加标注 → 拖动 → 撤销 → 峰值 → 刷新恢复 → 深色主题 → 移动端 → 导出 PNG」，
-截图落在 `web/.screenshots/`（已在 .gitignore 里）。`docs/` 下的 README 配图由
+导入标注 CSV → 手动加标注 → 拖动 → 撤销 → 峰值 → 缩放 → 刷新恢复 → 深色主题 → 移动端 → 导出 PNG」，
+截图落在 `.screenshots/`（已在 .gitignore 里）。`docs/` 下的 README 配图由
 `node scripts/screenshots.mjs` 生成。
+
+性能回归用 `node scripts/bench-ui.mjs`（会自己造一年的合成数据，测量切日期 / 选标注 / 鼠标扫图
+的主线程耗时）。当前参考值（一年 10.5 万点）：切日期约 11ms、选标注约 1.7ms、鼠标扫图约 3.8ms 每次。
+
+两个和渲染性能有关的开关：
+
+- 图表默认关闭 ECharts 的 `useDirtyRect`（只重绘变化区域）。开启时在平移/提示框连续重绘的
+  场景下，面积填充会留下没被补回来的竖条；加 `?dirtyrect=1` 可以打开它做对比。
+- 面积填充用纯色而不是纵向渐变：渐变每帧要逐像素求值，实测每次重绘贵约 27%，两者视觉差异约 0.5%。
 
 目录结构：
 

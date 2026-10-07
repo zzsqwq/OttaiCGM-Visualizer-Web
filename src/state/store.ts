@@ -69,6 +69,8 @@ class Store {
   };
 
   private listeners = new Set<Listener>();
+  private statsCache = new Map<string, Stats>();
+  private statsCacheKey = '';
   private past: Annotation[][] = [];
   private future: Annotation[][] = [];
 
@@ -146,8 +148,24 @@ class Store {
     return this.state.dataset?.days ?? [];
   }
 
+  /**
+   * 某一天的统计。
+   *
+   * 日期列表里每天都要算一次，而 render() 会在每次状态变化时被调用
+   * （选标注、改设置、输文字……），数据量大时重复计算会明显卡顿，
+   * 所以按「数据版本 + 目标范围 + 日期」缓存。
+   */
   statsFor(day: string): Stats {
-    return computeStats(this.state.dayIndex.get(day) ?? [], this.state.settings.target);
+    const key = `${this.state.dataset?.loadedAt ?? 0}|${this.state.settings.target.low}|${this.state.settings.target.high}`;
+    if (key !== this.statsCacheKey) {
+      this.statsCache.clear();
+      this.statsCacheKey = key;
+    }
+    const cached = this.statsCache.get(day);
+    if (cached) return cached;
+    const stats = computeStats(this.state.dayIndex.get(day) ?? [], this.state.settings.target);
+    this.statsCache.set(day, stats);
+    return stats;
   }
 
   // ---------------------------------------------------------------- 日期/选择

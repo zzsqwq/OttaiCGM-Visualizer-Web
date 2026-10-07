@@ -36,6 +36,9 @@ export class App {
   private renderQueued = false;
   private saveTimer = 0;
   private saveWarned = false;
+  /** 各区块上次渲染用的输入签名，用来跳过没必要的重建 */
+  private renderKeys = { days: '', stats: '', annotations: '', sources: '', activeDay: '' };
+  private lastRenderedAnnotations: unknown = null;
 
   // DOM
   private $ = {
@@ -449,8 +452,23 @@ export class App {
 
   // ------------------------------------------------------------ 调试入口（控制台 / 自动化测试用）
 
+  /** 基准/调试用：直接在某个时间点加一条标注 */
+  debugAddAnnotationAt(min: number, text: string): void {
+    const day = store.get().currentDay;
+    if (!day) return;
+    store.addAnnotation({ day, min, text, offset: 1.5 });
+  }
+
   debugAnnotations(): Annotation[] {
     return store.get().annotations;
+  }
+
+  debugChart(): DayChart['chart'] | null {
+    return this.chart ? this.chart.chart : null;
+  }
+
+  debugZoom(): { start: number; end: number } | null {
+    return this.chart ? this.chart.zoomWindow() : null;
   }
 
   debugPeaks(): Peak[] {
@@ -572,12 +590,49 @@ export class App {
 
     if (!hasData) return;
 
-    this.renderDayList();
+    // 渲染分层：只有对应输入变了才重建那块 DOM。
+    // 之前每次状态变化（选标注、改设置、打字…）都会重建日期列表和统计，
+    // 数据一多就很卡。
+    const dataVersion = state.dataset?.loadedAt ?? 0;
+    const target = `${state.settings.target.low}-${state.settings.target.high}`;
+
+    // 日期列表只在「数据/目标范围变了」时重建；切换日期只切高亮 class，
+    // 否则一年 365 天每次点日期都要重建整张列表。
+    const daysKey = `${dataVersion}|${target}|${state.dataset?.days.length ?? 0}`;
+    if (daysKey !== this.renderKeys.days) {
+      this.renderDayList();
+      this.renderKeys.days = daysKey;
+    }
+    if ((state.currentDay ?? '') !== this.renderKeys.activeDay) {
+      const active = state.currentDay;
+      for (const el of this.$['dayList'].querySelectorAll<HTMLElement>('.day-item')) {
+        el.classList.toggle('is-active', el.dataset.day === active);
+      }
+      this.renderKeys.activeDay = state.currentDay ?? '';
+    }
+
     this.renderHeader();
-    this.renderStats();
+
+    const statsKey = `${dataVersion}|${target}|${state.currentDay}`;
+    if (statsKey !== this.renderKeys.stats) {
+      this.renderStats();
+      this.renderKeys.stats = statsKey;
+    }
+
     this.renderChart();
-    this.renderAnnotations();
-    this.renderSources();
+
+    const annotationsKey = `${state.currentDay}|${state.selectedId}`;
+    if (state.annotations !== this.lastRenderedAnnotations || annotationsKey !== this.renderKeys.annotations) {
+      this.renderAnnotations();
+      this.lastRenderedAnnotations = state.annotations;
+      this.renderKeys.annotations = annotationsKey;
+    }
+
+    if (`${dataVersion}` !== this.renderKeys.sources) {
+      this.renderSources();
+      this.renderKeys.sources = `${dataVersion}`;
+    }
+
     this.renderToolbarState();
   }
 
@@ -798,11 +853,14 @@ export class App {
       this.addAnnotationAt(Math.max(0, Math.min(1440, min)));
     });
 
-    let raf = 0;
+    // 注意：读数刷新和标注重排各用一个 rAF 槽。
+    // 之前两者共用一个变量，会互相把对方的调度吞掉（平移时标注掉帧）。
+    let readoutRaf = 0;
+    let overlayRaf = 0;
     zr.on('mousemove', (e: { offsetX: number }) => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
+      if (readoutRaf) return;
+      readoutRaf = requestAnimationFrame(() => {
+        readoutRaf = 0;
         const day = store.get().currentDay;
         if (!day) return;
         const min = chart.pixelToMin(e.offsetX);
@@ -816,9 +874,9 @@ export class App {
     });
 
     chart.chart.on('rendered', () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
+      if (overlayRaf) return;
+      overlayRaf = requestAnimationFrame(() => {
+        overlayRaf = 0;
         this.overlay?.position();
       });
     });

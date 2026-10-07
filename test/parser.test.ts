@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseBuffer, mergeReadings } from '../src/core/parser';
+import { toCsv } from '../src/core/csv';
 import reference from './fixtures/reference.json';
 
 const FIXTURES = join(__dirname, 'fixtures');
@@ -69,6 +70,50 @@ describe('parseBuffer: 兼容各种输入格式', () => {
     expect(outcome.readings).toEqual([
       { day: '2025-03-20', min: 105, v: 6.6 },
       { day: '2025-03-20', min: 110, v: 6.7 },
+    ]);
+  });
+
+  it('日期与时间分成两列的 CSV：多天数据不会被压成一天', () => {
+    // 回归用例：时间列只有「00:00」这种时分秒时，日期必须取本行的日期列，
+    // 不能用上一行的日期兜底（曾经因此把多天数据合并到第一天）。
+    const csv = [
+      '日期,时间,血糖值mmol/L',
+      '2025-01-01,00:00,5.6',
+      '2025-01-01,00:05,5.7',
+      '2025-01-02,00:00,6.1',
+      '2025-01-02,12:00,7.2',
+      '2025-01-03,00:00,5.9',
+    ].join('\n');
+    const outcome = parseBuffer('t.csv', toArrayBuffer(csv));
+    expect(outcome.readings).toEqual([
+      { day: '2025-01-01', min: 0, v: 5.6 },
+      { day: '2025-01-01', min: 5, v: 5.7 },
+      { day: '2025-01-02', min: 0, v: 6.1 },
+      { day: '2025-01-02', min: 720, v: 7.2 },
+      { day: '2025-01-03', min: 0, v: 5.9 },
+    ]);
+    expect(outcome.source.skipped).toBe(0);
+  });
+
+  it('日期列有合并/留空时，沿用上一行的日期（Excel 合并单元格）', () => {
+    const csv = ['日期,时间,血糖值mmol/L', '2025-01-01,00:00,5.6', ',00:05,5.7', ',00:10,5.8'].join('\n');
+    const outcome = parseBuffer('merged.csv', toArrayBuffer(csv));
+    expect(outcome.readings.map((r) => `${r.day} ${r.min}`)).toEqual(['2025-01-01 0', '2025-01-01 5', '2025-01-01 10']);
+  });
+
+  it('自己导出的血糖 CSV 能原样导入（round-trip）', () => {
+    const rows = [
+      ['日期', '时间', '血糖值mmol/L'],
+      ['2025-03-20', '00:00', 5.6],
+      ['2025-03-20', '23:55', 6.1],
+      ['2025-03-21', '00:00', 6.4],
+    ];
+    const csv = toCsv(rows);
+    const outcome = parseBuffer('血糖数据-20250320.csv', toArrayBuffer('\uFEFF' + csv));
+    expect(outcome.readings).toEqual([
+      { day: '2025-03-20', min: 0, v: 5.6 },
+      { day: '2025-03-20', min: 1435, v: 6.1 },
+      { day: '2025-03-21', min: 0, v: 6.4 },
     ]);
   });
 

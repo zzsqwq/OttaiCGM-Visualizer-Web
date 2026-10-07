@@ -24,6 +24,10 @@ interface Entry {
   anchor: HTMLElement;
   path: SVGPathElement;
   editing: boolean;
+  /** 缓存的标签尺寸：避免每帧都读 offsetWidth/offsetHeight（会触发布局） */
+  w: number;
+  h: number;
+  sizeDirty: boolean;
 }
 
 const LABEL_PAD = 6;
@@ -58,6 +62,8 @@ export class AnnotationOverlay {
   private annotations: Annotation[] = [];
   private readings: Reading[] = [];
   private selectedId: string | null = null;
+  private lastW = 0;
+  private lastH = 0;
   private dragState: {
     id: string;
     mode: 'label' | 'anchor';
@@ -167,7 +173,7 @@ export class AnnotationOverlay {
     this.layer.appendChild(anchor);
     this.svg.appendChild(path);
 
-    const entry: Entry = { id: ann.id, label, anchor, path, editing: false };
+    const entry: Entry = { id: ann.id, label, anchor, path, editing: false, w: 0, h: 0, sizeDirty: true };
 
     label.addEventListener('pointerdown', (e) => this.onPointerDown(e, ann.id, 'label'));
     anchor.addEventListener('pointerdown', (e) => this.onPointerDown(e, ann.id, 'anchor'));
@@ -199,7 +205,10 @@ export class AnnotationOverlay {
     const timeEl = entry.label.querySelector('.ann-time') as HTMLElement | null;
     const textEl = entry.label.querySelector('.ann-text') as HTMLElement | null;
     if (timeEl) timeEl.textContent = formatHM(ann.min);
-    if (textEl) textEl.textContent = ann.text || '（空）';
+    if (textEl && textEl.textContent !== (ann.text || '（空）')) {
+      textEl.textContent = ann.text || '（空）';
+      entry.sizeDirty = true; // 文字变了要重新量尺寸
+    }
     entry.label.classList.toggle('is-selected', ann.id === this.selectedId);
     entry.label.setAttribute('aria-label', `${formatHM(ann.min)} ${ann.text}`);
     entry.path.classList.toggle('is-selected', ann.id === this.selectedId);
@@ -235,6 +244,7 @@ export class AnnotationOverlay {
       span.textContent = value || ann.text || '（空）';
       input.replaceWith(span);
       entry.editing = false;
+      entry.sizeDirty = true;
       entry.label.classList.remove('is-editing');
       this.cb.onEditStart(null);
       timeEl.textContent = formatHM(ann.min);
@@ -330,9 +340,14 @@ export class AnnotationOverlay {
     const width = this.root.clientWidth;
     const height = this.root.clientHeight;
     if (!width || !height) return;
-    this.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    this.svg.setAttribute('width', String(width));
-    this.svg.setAttribute('height', String(height));
+    // 只在画布尺寸真的变了才动 SVG 属性，否则每帧写一次会触发多余的重排
+    if (width !== this.lastW || height !== this.lastH) {
+      this.lastW = width;
+      this.lastH = height;
+      this.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      this.svg.setAttribute('width', String(width));
+      this.svg.setAttribute('height', String(height));
+    }
 
     interface Placement {
       entry: Entry;
@@ -363,15 +378,13 @@ export class AnnotationOverlay {
       const anchorX = this.chart.xToPixel(ann.min);
       const anchorY = this.chart.yToPixel(base);
       const desiredY = this.chart.yToPixel(base + ann.offset);
-      placements.push({
-        entry,
-        ann,
-        anchorX,
-        anchorY,
-        desiredY,
-        w: entry.label.offsetWidth || 80,
-        h: entry.label.offsetHeight || 24,
-      });
+      // 尺寸只在内容变化后重新量一次，之后走缓存
+      if (entry.sizeDirty || !entry.w) {
+        entry.w = entry.label.offsetWidth || 80;
+        entry.h = entry.label.offsetHeight || 24;
+        entry.sizeDirty = false;
+      }
+      placements.push({ entry, ann, anchorX, anchorY, desiredY, w: entry.w, h: entry.h });
     }
 
     placements.sort((a, b) => a.anchorX - b.anchorX);

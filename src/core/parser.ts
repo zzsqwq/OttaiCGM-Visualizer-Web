@@ -183,17 +183,19 @@ function parseGlucoseMatrix(
   for (let r = startRow; r < rows.length; r++) {
     const row = rows[r] ?? [];
     const timeCell = row[timeCol];
-    let parsed = parseDateTime(timeCell, lastDay ?? undefined);
+    const timeText = cellText(timeCell);
+    let parsed: { day: string; min: number } | null = null;
 
-    if (!parsed && dateCol >= 0) {
-      const day = parseDayOnly(row[dateCol]);
-      const min = parseClock(timeCell);
+    if (dateCol >= 0) {
+      // 「日期」和「时间」分成两列：日期必须以本行的日期列为准。
+      // 这里曾经先用 parseDateTime(timeCell, lastDay) 兜底，导致只有时分秒的
+      // 单元格全部沿用上一行的日期 —— 多天数据会被压成第一天。
+      const full = /\d{4}/.test(timeText) ? parseDateTime(timeCell) : null;
+      const day: string | null = parseDayOnly(row[dateCol]) ?? full?.day ?? lastDay;
+      const min = parseClock(timeCell) ?? full?.min ?? null;
       if (day && min != null) parsed = { day, min };
-    }
-    // 单元格里可能只有日期，时间在另一列
-    if (parsed && dateCol >= 0 && !/\d{1,2}[:：]\d{2}/.test(cellText(timeCell))) {
-      const min = parseClock(row[dateCol]);
-      parsed = { day: parseDayOnly(timeCell) ?? parsed.day, min: min ?? 0 };
+    } else {
+      parsed = parseDateTime(timeCell, lastDay ?? undefined);
     }
 
     const value = parseGlucoseValue(row[valueCol]);

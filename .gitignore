@@ -6,6 +6,7 @@ dist-single/
 
 # 调试/测试产物
 .screenshots/
+.perf/
 *.local
 
 # 编辑器

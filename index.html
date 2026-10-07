@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>欧态血糖可视化 · 在浏览器里看懂你的血糖曲线</title>
+    <meta
+      name="description"
+      content="纯前端的欧态血糖仪数据可视化工具：导入 Excel/CSV，自动按天拆分，在曲线上自由添加饮食、运动、感受标注。数据只在本地浏览器解析，不会上传。"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234a86e8'/%3E%3Cpath d='M5 20 L11 20 L14 12 L18 24 L21 17 L27 17' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="30" height="30">
+              <rect width="32" height="32" rx="9" fill="currentColor" />
+              <path
+                d="M5 20 L11 20 L14 12 L18 24 L21 17 L27 17"
+                stroke="#fff"
+                stroke-width="2.4"
+                fill="none"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <div class="brand-text">
+            <h1>欧态血糖可视化</h1>
+            <p>导入欧态血糖仪数据，按天看曲线、自由加标注 · 全程本地解析，不上传</p>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="btn-sample" class="btn ghost" type="button">试试示例</button>
+          <button id="btn-import" class="btn primary" type="button">
+            <span class="ico">↑</span> 导入数据
+          </button>
+          <div class="popover-host">
+            <button id="btn-export" class="btn ghost" type="button" aria-haspopup="true" aria-expanded="false">
+              导出 <span class="caret">▾</span>
+            </button>
+            <div class="popover" id="export-menu" hidden>
+              <button type="button" data-act="png">当前日图片 (PNG)</button>
+              <button type="button" data-act="csv-day">当前日标注 (CSV)</button>
+              <button type="button" data-act="csv-all">全部标注 (CSV)</button>
+              <button type="button" data-act="csv-glucose">当前日血糖数据 (CSV)</button>
+              <div class="popover-sep"></div>
+              <button type="button" data-act="json">备份全部数据 (JSON)</button>
+              <button type="button" data-act="import-json">从 JSON 恢复…</button>
+              <div class="popover-sep"></div>
+              <button type="button" data-act="clear" class="danger">清空本地数据</button>
+            </div>
+          </div>
+          <button id="btn-theme" class="icon-btn" type="button" title="切换深浅色" aria-label="切换深浅色">◐</button>
+          <input
+            id="file-input"
+            type="file"
+            accept=".xlsx,.xls,.xlsm,.csv,.txt,.json"
+            multiple
+            hidden
+          />
+        </div>
+      </header>
+
+      <main id="main">
+        <!-- 空状态 -->
+        <section id="empty-state" class="empty-state">
+          <div class="empty-card">
+            <div class="empty-icon" aria-hidden="true">↑</div>
+            <h2>把欧态血糖仪的导出文件拖进来</h2>
+            <p class="muted">
+              支持欧态 App 导出的 <code>.xlsx</code>、以及 <code>.csv</code> / <code>.json</code>；也可以同时导入旧脚本用的标注 CSV。
+            </p>
+            <p id="pending-ann" class="pending-ann" hidden></p>
+            <div class="empty-actions">
+              <button id="btn-import-2" class="btn primary" type="button">选择文件</button>
+              <button id="btn-sample-2" class="btn ghost" type="button">用示例数据看看</button>
+            </div>
+            <ul class="empty-tips muted">
+              <li>文件里需要有「时刻」「血糖值mmol/L」两列（欧态 App 默认导出格式）</li>
+              <li>时间、单位（mmol/L 或 mg/dL）会自动识别，无需手动改表</li>
+              <li>数据和标注存在本机浏览器里，关掉浏览器再打开也还在（换设备请用「导出 → 备份全部数据」）</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 主工作区 -->
+        <section id="workspace" class="workspace" hidden>
+          <aside class="sidebar">
+            <div class="side-block">
+              <div class="side-head">
+                <h2>日期</h2>
+                <span id="day-count" class="pill muted"></span>
+              </div>
+              <ul id="day-list" class="day-list"></ul>
+            </div>
+            <div class="side-block">
+              <div class="side-head">
+                <h2>数据源</h2>
+                <button id="btn-add-file" class="link-btn" type="button">追加导入</button>
+              </div>
+              <ul id="sources" class="source-list"></ul>
+            </div>
+          </aside>
+
+          <div class="content">
+            <section class="card chart-card">
+              <div class="chart-head">
+                <div class="day-title">
+                  <h2 id="day-title">—</h2>
+                  <span id="day-sub" class="muted"></span>
+                </div>
+                <div class="chart-tools">
+                  <span id="hover-readout" class="readout muted"></span>
+                  <button id="btn-add" class="btn soft" type="button">
+                    <span class="ico">＋</span> 添加标注
+                  </button>
+                  <div class="popover-host">
+                    <button id="btn-peaks" class="btn ghost" type="button" aria-haspopup="true" aria-expanded="false">
+                      峰值 <span class="caret">▾</span>
+                    </button>
+                    <div class="popover" id="peaks-menu" hidden>
+                      <label class="check">
+                        <input type="checkbox" id="chk-peaks" /> 显示血糖峰值
+                      </label>
+                      <label class="field">
+                        <span>最小间隔（分钟）</span>
+                        <input type="number" id="peak-distance" min="5" max="240" step="5" value="30" />
+                      </label>
+                      <label class="field">
+                        <span>最小突出度（mmol/L）</span>
+                        <input type="number" id="peak-prominence" min="0.1" max="5" step="0.1" value="0.3" />
+                      </label>
+                      <p class="popover-hint muted">峰值只标注超过目标上限的那些</p>
+                    </div>
+                  </div>
+                  <div class="popover-host">
+                    <button id="btn-target" class="btn ghost" type="button" aria-haspopup="true" aria-expanded="false">
+                      目标范围 <span class="caret">▾</span>
+                    </button>
+                    <div class="popover" id="target-menu" hidden>
+                      <div class="field-row">
+                        <label class="field">
+                          <span>下限</span>
+                          <input type="number" id="target-low" min="2" max="8" step="0.1" value="3.9" />
+                        </label>
+                        <label class="field">
+                          <span>上限</span>
+                          <input type="number" id="target-high" min="5" max="15" step="0.1" value="7.8" />
+                        </label>
+                      </div>
+                      <p class="popover-hint muted">默认 3.9–7.8 mmol/L，图上的颜色分界会跟着变</p>
+                    </div>
+                  </div>
+                  <button id="btn-reset-zoom" class="btn ghost" type="button" title="回到完整一天">重置缩放</button>
+                </div>
+              </div>
+
+              <div id="stats" class="stats"></div>
+
+              <div class="chart-wrap" id="chart-wrap">
+                <div id="chart" class="chart"></div>
+                <svg id="leaders" class="leaders" aria-hidden="true"></svg>
+                <div id="labels" class="labels"></div>
+                <div id="add-hint" class="add-hint" hidden>点击曲线上任意位置添加标注，按 Esc 取消</div>
+              </div>
+            </section>
+
+            <section class="card ann-card">
+              <div class="ann-head">
+                <h2>活动标注 <span id="ann-count" class="pill muted"></span></h2>
+                <div class="ann-head-actions">
+                  <button id="btn-ann-import" class="link-btn" type="button">导入标注 CSV</button>
+                  <button id="btn-ann-csv" class="link-btn" type="button">导出本日 CSV</button>
+                  <button id="btn-ann-clear" class="link-btn danger" type="button">清空本日</button>
+                </div>
+              </div>
+              <p id="ann-empty" class="empty-note muted">
+                点「添加标注」后在曲线上点一下，就能记录这一天的饮食、运动或感受；拖着标签上下移动可以避开曲线，拖曲线上的小圆点可以改时间，双击文字可修改。
+              </p>
+              <ul id="ann-list" class="ann-list"></ul>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <div id="drop-overlay" class="drop-overlay" hidden>
+        <div class="drop-inner">松手即可导入</div>
+      </div>
+      <div id="toast-host" class="toast-host" aria-live="polite"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

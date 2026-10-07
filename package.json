@@ -1,0 +1,33 @@
+{
+  "name": "ottai-cgm-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "欧态血糖仪数据可视化 — 纯前端版本",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.mjs",
+    "reference": "python3 scripts/gen-reference.py",
+    "build:single": "node scripts/build-single.mjs"
+  },
+  "dependencies": {
+    "echarts": "^6.1.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "vitest": "^4.1.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

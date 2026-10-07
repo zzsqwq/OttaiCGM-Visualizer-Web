@@ -1,0 +1,14 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-single/
+.vite/
+
+# 调试/测试产物
+.screenshots/
+*.local
+
+# 编辑器
+.DS_Store
+.idea/
+.vscode/

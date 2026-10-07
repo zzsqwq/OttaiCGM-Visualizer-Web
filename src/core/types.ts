@@ -23,6 +23,8 @@ export interface Annotation {
   text: string;
   /** 纵向偏移，单位 mmol/L；>0 在曲线上方，<0 在下方 */
   offset: number;
+  /** 来自示例标注文件（移除示例数据时会一起删掉；用户自己写的不受影响） */
+  sample?: boolean;
 }
 
 /** 自动检出的血糖峰值 */
@@ -41,6 +43,10 @@ export interface SourceInfo {
   duplicates: number;
   unit: 'mmol/L' | 'mg/dL';
   kind: 'glucose' | 'annotations';
+  /** 来自「试试示例」，而不是用户自己导入的文件 */
+  sample?: boolean;
+  /** 这个文件覆盖了哪些日期（血糖文件才有），移除示例数据时用来精确判断 */
+  days?: string[];
 }
 
 export interface Dataset {

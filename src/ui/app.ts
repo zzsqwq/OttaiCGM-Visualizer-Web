@@ -61,6 +61,7 @@ export class App {
     annEmpty: qs('#ann-empty'),
     annCount: qs('#ann-count'),
     sources: qs('#sources'),
+    btnSampleRemove: qs<HTMLButtonElement>('#btn-sample-remove'),
     toasts: qs('#toast-host'),
     drop: qs('#drop-overlay'),
     chkPeaks: qs<HTMLInputElement>('#chk-peaks'),
@@ -119,6 +120,12 @@ export class App {
     qs('#btn-add-file').addEventListener('click', openPicker);
     qs('#btn-ann-import').addEventListener('click', openPicker);
     qs('#btn-sample').addEventListener('click', () => void this.loadSample());
+    this.$['btnSampleRemove'].addEventListener('click', () => {
+      const removed = store.removeSampleData();
+      if (removed.readings || removed.annotations) {
+        store.toast(`已移除示例数据（${removed.readings} 个血糖点 / ${removed.annotations} 条标注）`, 'success');
+      }
+    });
     qs('#btn-sample-2').addEventListener('click', () => void this.loadSample());
 
     this.$['fileInput'].addEventListener('change', (ev) => {
@@ -256,8 +263,9 @@ export class App {
 
   // ------------------------------------------------------------ 导入
 
-  private async handleFiles(files: File[]): Promise<void> {
+  private async handleFiles(files: File[], options: { sample?: boolean } = {}): Promise<void> {
     if (!files.length) return;
+    const isSample = options.sample === true;
     const readings: Reading[] = [];
     const sources: SourceInfo[] = [];
     const drafts: ParsedAnnotationDraft[] = [];
@@ -286,17 +294,33 @@ export class App {
       }
       if (outcome.readings.length) {
         readings.push(...outcome.readings);
-        sources.push({ ...outcome.source, readings: outcome.readings.length });
+        sources.push({
+          ...outcome.source,
+          readings: outcome.readings.length,
+          sample: isSample || undefined,
+          days: [...new Set(outcome.readings.map((r) => r.day))].sort(),
+        });
         dayNames.push(...outcome.readings.map((r) => r.day));
       }
       if (outcome.annotations.length) {
         drafts.push(...outcome.annotations);
-        const src = { ...outcome.source, kind: 'annotations' as const };
+        const src = { ...outcome.source, kind: 'annotations' as const, sample: isSample || undefined };
         if (!outcome.readings.length) sources.push(src);
       }
     }
 
     if (readings.length) {
+      // 用户自己导入了数据：示例数据就该退场了（用户明确说过不需要保留）
+      if (!isSample && store.hasSampleData()) {
+        const removed = store.removeSampleData();
+        if (removed.readings || removed.annotations) {
+          store.toast(
+            `已自动移除示例数据（${removed.readings} 个血糖点 / ${removed.annotations} 条标注），只保留你自己导入的内容`,
+            'info',
+            5000,
+          );
+        }
+      }
       const { added, duplicates } = store.addReadings(readings, sources);
       const days = [...new Set(dayNames)].sort();
       this.peakCache.clear();
@@ -313,7 +337,7 @@ export class App {
       const day = store.get().currentDay ?? store.days()[store.days().length - 1] ?? null;
       const withDay = drafts.filter((d) => d.day).length;
       if (day) {
-        const n = store.addDrafts(drafts, day);
+        const n = store.addDrafts(drafts, day, isSample);
         store.toast(`已导入 ${n} 条活动标注${withDay < n ? `（其中 ${n - withDay} 条没有日期，归到 ${day}）` : ''}`, 'success', 4000);
       } else {
         warnings.push('标注文件里没有日期信息，也没有血糖数据可以对应，暂时无法导入');
@@ -330,19 +354,31 @@ export class App {
   private applyWorkspace(outcome: ParseOutcome): void {
     const readings = outcome.readings;
     const days = [...new Set(readings.map((r) => r.day))].sort();
-    store.setDataset(readings, outcome.source.readings ? [{ ...outcome.source, kind: 'glucose' }] : []);
+    const fallbackSources = outcome.source.readings ? [{ ...outcome.source, kind: 'glucose' as const }] : [];
+    store.setDataset(readings, outcome.sources?.length ? outcome.sources : fallbackSources);
     const s = outcome.settings as Partial<Settings> | undefined;
     if (s) store.setSettings(s);
     if (outcome.annotations.length) {
       const fallback = days[days.length - 1] ?? '';
       store.addDrafts(outcome.annotations, fallback);
     }
+    this.renderKeys = { days: '', stats: '', annotations: '', sources: '', activeDay: '' };
     if (days.length) store.setDay(days[days.length - 1]);
     this.peakCache.clear();
     store.toast(`已从备份恢复：${days.length} 天 / ${readings.length} 个点 / ${outcome.annotations.length} 条标注`, 'success', 4000);
   }
 
   private async loadSample(): Promise<void> {
+    if (store.hasUserData()) {
+      store.toast('你已经导入自己的数据了，示例就不叠加了；想看示例可以先「导出 → 清空本地数据」', 'warn', 6000);
+      return;
+    }
+    if (store.hasSampleData()) {
+      const day = store.days()[0];
+      if (day) store.setDay(day);
+      store.toast('示例数据已经在里面了', 'info', 2400);
+      return;
+    }
     try {
       store.toast('正在载入示例数据…', 'info', 2000);
       const files: File[] = [];
@@ -352,7 +388,7 @@ export class App {
         const blob = await res.blob();
         files.push(new File([blob], path.split('/').pop() ?? path, { type: blob.type }));
       }
-      await this.handleFiles(files);
+      await this.handleFiles(files, { sample: true });
     } catch (err) {
       store.toast(`示例数据加载失败：${(err as Error).message}（本地打开 index.html 时请改用「导入数据」）`, 'error', 6000);
     }
@@ -588,7 +624,21 @@ export class App {
       pending.textContent = `本地还保存着 ${state.annotations.length} 条标注，导入对应的血糖文件后就会自动出现在图上。`;
     }
 
-    if (!hasData) return;
+    if (!hasData) {
+      // 数据被清空（例如移除示例）时，把工作区里遗留的列表也清掉，
+      // 否则隐藏的工作区里还留着上一次的日期和来源节点。
+      if (this.renderKeys.days !== '') {
+        clear(this.$['dayList']);
+        clear(this.$['stats']);
+        clear(this.$['sources']);
+        clear(this.$['annList']);
+        this.$['annCount'].textContent = '';
+        this.$['annEmpty'].hidden = true;
+        this.renderKeys = { days: '', stats: '', annotations: '', sources: '', activeDay: '' };
+        this.lastRenderedAnnotations = null;
+      }
+      return;
+    }
 
     // 渲染分层：只有对应输入变了才重建那块 DOM。
     // 之前每次状态变化（选标注、改设置、打字…）都会重建日期列表和统计，
@@ -983,6 +1033,7 @@ export class App {
 
   private renderSources(): void {
     const state = store.get();
+    this.$['btnSampleRemove'].hidden = !store.hasSampleData();
     clear(this.$['sources']);
     const sources = state.dataset?.sources ?? [];
     if (!sources.length) {

@@ -446,6 +446,12 @@ code {
   padding: 0 6px 8px;
 }
 
+.side-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .side-head h2 {
   margin: 0;
   font-size: 12px;

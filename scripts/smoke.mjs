@@ -104,6 +104,79 @@ async function main() {
     check('示例数据 15 天全部载入', sample.days === 15, `${sample.days} 天`);
     check('示例标注载入并画在图上', sample.ann >= 5 && sample.labels >= 5, `${sample.ann} 条 / ${sample.labels} 个标签`);
     await cdp.screenshot(join(SHOTS, '00-sample.png'));
+
+    // 再点一次「试试示例」不应该重复添加
+    const sourcesBefore = await cdp.eval(`return document.querySelectorAll('#sources .source-item').length;`);
+    await cdp.eval(`document.querySelector('#btn-sample').click(); return true;`);
+    await sleep(900);
+    const afterSecondClick = await cdp.eval(`
+      return {
+        days: document.querySelectorAll('#day-list .day-item').length,
+        sources: document.querySelectorAll('#sources .source-item').length,
+        removeBtnVisible: !document.querySelector('#btn-sample-remove').hidden,
+        toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent),
+      };
+    `);
+    check(
+      '重复点示例不会重复添加',
+      afterSecondClick.days === 15 && afterSecondClick.sources === sourcesBefore,
+      `${afterSecondClick.days} 天 / ${afterSecondClick.sources} 个来源（原 ${sourcesBefore}）`,
+    );
+    check('示例存在时显示「移除示例」入口', afterSecondClick.removeBtnVisible);
+    check(
+      '重复点击有明确提示',
+      afterSecondClick.toasts.some((t) => t.includes('已经在里面')),
+      afterSecondClick.toasts.join(' | '),
+    );
+
+    // 手动「移除示例」按钮
+    await cdp.eval(`document.querySelector('#btn-sample-remove').click(); return true;`);
+    await cdp.waitFor(`!document.querySelector('#empty-state').hidden`, { label: '手动移除示例后回到引导页' });
+    const afterManualRemove = await cdp.eval(`return { days: document.querySelectorAll('#day-list .day-item').length };`);
+    check('「移除示例」可以一键清掉示例数据', afterManualRemove.days === 0, `剩余 ${afterManualRemove.days} 天`);
+    // 再载入一次示例，继续验证「导入自己的数据后自动退场」
+    await cdp.eval(`document.querySelector('#btn-sample-2').click(); return true;`);
+    await cdp.waitFor(`document.querySelectorAll('#day-list .day-item').length === 15`, { label: '再次载入示例' });
+    await sleep(500);
+
+    // 导入自己的数据后，示例应当自动退场
+    await cdp.setFileInput('#file-input', [FIXTURES.real]);
+    await cdp.waitFor(`document.querySelectorAll('#day-list .day-item').length === 1`, { label: '导入自己的数据后只剩 1 天' });
+    await sleep(600);
+    const afterOwnImport = await cdp.eval(`
+      const sources = [...document.querySelectorAll('#sources .source-item')].map(e => e.textContent);
+      return {
+        days: [...document.querySelectorAll('#day-list .day-item')].map(e => e.dataset.day),
+        sources,
+        removeBtnHidden: document.querySelector('#btn-sample-remove').hidden,
+        toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent),
+      };
+    `);
+    check(
+      '导入自己的数据后示例自动移除',
+      afterOwnImport.days.length === 1 && afterOwnImport.days[0] === '2026-10-07' && afterOwnImport.sources.length === 1,
+      `${afterOwnImport.days.join(',')} / ${afterOwnImport.sources.join(' · ')}`,
+    );
+    check('示例没了以后「移除示例」入口隐藏', afterOwnImport.removeBtnHidden);
+    check(
+      '自动移除有提示',
+      afterOwnImport.toasts.some((t) => t.includes('已自动移除示例数据')),
+      afterOwnImport.toasts.join(' | '),
+    );
+    // 已有自己的数据时，再点示例应该被拒绝（不掺杂）
+    await cdp.eval(`document.querySelector('#btn-sample').click(); return true;`);
+    await sleep(800);
+    const refuse = await cdp.eval(`
+      return {
+        days: document.querySelectorAll('#day-list .day-item').length,
+        toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent),
+      };
+    `);
+    check(
+      '已有自己的数据时不再叠加示例',
+      refuse.days === 1 && refuse.toasts.some((t) => t.includes('示例就不叠加了')),
+      `${refuse.days} 天 · ${refuse.toasts.join(' | ')}`,
+    );
     await cdp.eval(`document.querySelector('#export-menu') && true; return true;`);
     await cdp.eval(`
       window.confirm = () => true;

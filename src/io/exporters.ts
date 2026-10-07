@@ -25,7 +25,8 @@ export interface WorkspaceExport {
   version: 1;
   exportedAt: string;
   readings: Record<string, number[]>;
-  annotations: { day: string; min: number; text: string; offset: number }[];
+  annotations: { day: string; min: number; text: string; offset: number; sample?: boolean }[];
+  sources?: Dataset['sources'];
   settings?: Record<string, unknown>;
 }
 
@@ -46,7 +47,14 @@ export function workspaceToJson(
     version: 1,
     exportedAt: new Date().toISOString(),
     readings,
-    annotations: annotations.map((a) => ({ day: a.day, min: Math.round(a.min * 100) / 100, text: a.text, offset: a.offset })),
+    sources: dataset?.sources ?? [],
+    annotations: annotations.map((a) => ({
+      day: a.day,
+      min: Math.round(a.min * 100) / 100,
+      text: a.text,
+      offset: a.offset,
+      ...(a.sample ? { sample: true } : {}),
+    })),
     settings,
   };
   return JSON.stringify(payload);

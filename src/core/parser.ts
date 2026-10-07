@@ -16,6 +16,8 @@ export interface ParsedAnnotationDraft {
   min: number;
   text: string;
   offset: number;
+  /** 来自示例数据（备份文件里会带上） */
+  sample?: boolean;
 }
 
 export interface ParseOutcome {
@@ -24,6 +26,8 @@ export interface ParseOutcome {
   annotations: ParsedAnnotationDraft[];
   settings?: Record<string, unknown>;
   source: SourceInfo;
+  /** JSON 备份里带的原始来源列表（保留「示例」标记） */
+  sources?: SourceInfo[];
   warnings: string[];
 }
 
@@ -330,6 +334,7 @@ interface WorkspaceLike {
   readings?: unknown;
   annotations?: unknown;
   settings?: Record<string, unknown>;
+  sources?: unknown;
 }
 
 function parseWorkspace(json: WorkspaceLike, fileName: string): ParseOutcome | null {
@@ -366,7 +371,7 @@ function parseWorkspace(json: WorkspaceLike, fileName: string): ParseOutcome | n
       const min = typeof o.min === 'number' ? o.min : null;
       const text = typeof o.text === 'string' ? o.text : '';
       const offset = typeof o.offset === 'number' ? o.offset : 0;
-      if (min != null && text) annotations.push({ day, min, text, offset });
+      if (min != null && text) annotations.push({ day, min, text, offset, ...(o.sample ? { sample: true } : {}) });
     }
   }
 
@@ -375,6 +380,7 @@ function parseWorkspace(json: WorkspaceLike, fileName: string): ParseOutcome | n
     readings,
     annotations,
     settings: json.settings,
+    sources: Array.isArray(json.sources) ? (json.sources as SourceInfo[]) : undefined,
     warnings: [],
     source: {
       name: fileName,

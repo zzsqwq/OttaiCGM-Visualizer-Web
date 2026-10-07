@@ -97,10 +97,17 @@ class Store {
   setDataset(readings: Reading[], sources: Dataset['sources']): void {
     const { readings: merged } = mergeReadings(readings, []);
     const days = [...new Set(merged.map((r) => r.day))].sort();
+    // 同一个文件名只保留一条（重复导入同一个文件时列表不会越长越长）
+    const dedupedSources: Dataset['sources'] = [];
+    for (const source of sources) {
+      const idx = dedupedSources.findIndex((x) => x.name === source.name);
+      if (idx >= 0) dedupedSources[idx] = source;
+      else dedupedSources.push(source);
+    }
     const dataset: Dataset = {
       readings: merged,
       days,
-      sources,
+      sources: dedupedSources,
       convertedFromMgDl: sources.some((s) => s.unit === 'mg/dL'),
       loadedAt: Date.now(),
     };
@@ -223,11 +230,73 @@ class Store {
     return created.length;
   }
 
-  /** 把「没有日期」的标注落到指定日期 */
-  addDrafts(drafts: ParsedAnnotationDraft[], fallbackDay: string): number {
+  /** 把「没有日期」的标注落到指定日期；sample = 来自示例数据 */
+  addDrafts(drafts: ParsedAnnotationDraft[], fallbackDay: string, sample = false): number {
     return this.addAnnotations(
-      drafts.map((d) => ({ day: d.day ?? fallbackDay, min: d.min, text: d.text, offset: d.offset })),
+      drafts.map((d) => ({
+        day: d.day ?? fallbackDay,
+        min: d.min,
+        text: d.text,
+        offset: d.offset,
+        sample: d.sample ?? sample,
+      })),
     );
+  }
+
+  // ---------------------------------------------------------------- 示例数据
+
+  /** 当前是否有示例数据（血糖或标注） */
+  hasSampleData(): boolean {
+    return (this.state.dataset?.sources.some((s) => s.sample) ?? false) || this.state.annotations.some((a) => a.sample);
+  }
+
+  /** 当前是否有用户自己导入的数据 */
+  hasUserData(): boolean {
+    return this.state.dataset?.sources.some((s) => !s.sample) ?? false;
+  }
+
+  /**
+   * 移除示例数据：
+   * - 血糖点：只删「仅被示例覆盖」的日期；如果用户自己也导入了同一天的血糖，保留
+   * - 标注：只删示例标注文件带来的那些，用户自己写的不动
+   * - 来源列表：去掉示例条目
+   */
+  removeSampleData(): { readings: number; annotations: number } {
+    const sources = this.state.dataset?.sources ?? [];
+    const sampleSources = sources.filter((s) => s.sample);
+    const sampleAnnotations = this.state.annotations.filter((a) => a.sample);
+    if (!sampleSources.length && !sampleAnnotations.length) return { readings: 0, annotations: 0 };
+
+    const userDays = new Set(sources.filter((s) => !s.sample).flatMap((s) => s.days ?? []));
+    const removeDays = new Set<string>();
+    for (const source of sampleSources) {
+      for (const day of source.days ?? []) {
+        if (!userDays.has(day)) removeDays.add(day);
+      }
+    }
+
+    const before = this.state.dataset?.readings ?? [];
+    const readings = before.filter((r) => !removeDays.has(r.day));
+    const annotations = this.state.annotations.filter((a) => !a.sample);
+    if (annotations.length !== this.state.annotations.length) this.pushHistory();
+
+    const days = [...new Set(readings.map((r) => r.day))].sort();
+    const currentDay = this.state.currentDay && days.includes(this.state.currentDay) ? this.state.currentDay : (days[0] ?? null);
+    const dataset = this.state.dataset
+      ? { ...this.state.dataset, readings, days, sources: sources.filter((s) => !s.sample), loadedAt: Date.now() }
+      : null;
+
+    this.state = {
+      ...this.state,
+      dataset,
+      dayIndex: buildDayIndex(readings),
+      annotations,
+      currentDay,
+      selectedId: annotations.some((a) => a.id === this.state.selectedId) ? this.state.selectedId : null,
+      addMode: false,
+    };
+    this.emit();
+    return { readings: before.length - readings.length, annotations: sampleAnnotations.length };
   }
 
   updateAnnotation(id: string, patch: Partial<Omit<Annotation, 'id'>>, record = true): void {

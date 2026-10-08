@@ -263,6 +263,29 @@ code {
   color: var(--accent);
 }
 
+/* 顶栏的 GitHub 入口是个 <a>，去掉下划线并居中图标 */
+a.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--text-soft);
+}
+
+a.icon-btn:hover {
+  color: var(--text);
+}
+
+.empty-tips a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.empty-tips a:hover {
+  border-bottom-color: var(--accent);
+}
+
 .link-btn {
   border: 0;
   background: none;

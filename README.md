@@ -5,6 +5,7 @@
 **纯前端、无后端、无上传**：所有解析、绘图、保存都在你自己的浏览器里完成。
 
 > 在线使用：<https://zzsqwq.github.io/OttaiCGM-Visualizer-Web/>
+> 源码（Apache-2.0）：<https://github.com/zzsqwq/OttaiCGM-Visualizer-Web>
 > 原来的 Python 脚本版在 <https://github.com/zzsqwq/OttaiGCM-Visualizer>
 
 ![界面预览（模拟数据）](docs/preview-light.png)
@@ -179,3 +180,9 @@ src/
 
 基准数据由 `pnpm reference`（需要本地 scipy）生成，产物是 `test/fixtures/reference.json`，
 单元测试直接拿它比对，所以**没有 scipy 的环境也能跑测试**。
+
+## 许可
+
+Apache-2.0，源码托管在 GitHub：<https://github.com/zzsqwq/OttaiCGM-Visualizer-Web>
+
+欢迎提 issue / PR。数据只在浏览器本地处理，仓库里不含任何服务端代码。

@@ -92,6 +92,25 @@ async function main() {
     check('首屏是引导页（空状态）', firstScreen.emptyVisible && firstScreen.workspaceHidden, JSON.stringify(firstScreen));
     check('弹层/拖拽遮罩默认隐藏', firstScreen.popoversHidden && firstScreen.dropHidden, JSON.stringify(firstScreen));
 
+    const opensource = await cdp.eval(`
+      const link = document.querySelector('#link-github');
+      return {
+        href: link?.getAttribute('href') ?? null,
+        target: link?.getAttribute('target') ?? null,
+        rel: link?.getAttribute('rel') ?? null,
+        title: link?.getAttribute('title') ?? null,
+        inTips: [...document.querySelectorAll('.empty-tips a')].some((a) => a.href.includes('github.com')),
+      };
+    `);
+    check(
+      '顶栏有 GitHub 源码入口，指向仓库且新窗口打开',
+      opensource.href === 'https://github.com/zzsqwq/OttaiCGM-Visualizer-Web' &&
+        opensource.target === '_blank' &&
+        (opensource.rel ?? '').includes('noopener'),
+      JSON.stringify(opensource),
+    );
+    check('引导页也标明开源与许可', opensource.inTips && (opensource.title ?? '').includes('Apache-2.0'), String(opensource.title));
+
     // ---------------------------------------------------------- 示例数据
     console.log('\n[0] 点「用示例数据看看」');
     await cdp.eval(`document.querySelector('#btn-sample-2').click(); return true;`);

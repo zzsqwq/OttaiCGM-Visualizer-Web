@@ -218,6 +218,9 @@ export async function composePng(opts: PngExportOptions): Promise<Blob> {
   ctx.fillStyle = palette.muted;
   ctx.font = `${10.5 * scale}px ${FONT_FAMILY}`;
   ctx.fillText(`血糖可视化 · 目标范围 ${stats.target.low}–${stats.target.high} mmol/L · 浏览器本地绘制`, pad, canvas.height - 13 * scale);
+  ctx.textAlign = 'right';
+  ctx.fillText('开源 · github.com/zzsqwq/OttaiCGM-Visualizer-Web', canvas.width - pad, canvas.height - 13 * scale);
+  ctx.textAlign = 'left';
 
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('导出失败'))), 'image/png');
